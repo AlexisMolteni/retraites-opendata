@@ -35,7 +35,10 @@ def read_sql(query: str, **kwargs):
     # pyodbc retourne decimal.Decimal pour les colonnes DECIMAL/NUMERIC ;
     # on force la conversion en float64 pour compatibilité matplotlib/numpy.
     for col in df.select_dtypes(include="object").columns:
-        df[col] = pd.to_numeric(df[col], errors="ignore")
+        try:
+            df[col] = pd.to_numeric(df[col])
+        except (ValueError, TypeError):
+            pass
     return df
 
 

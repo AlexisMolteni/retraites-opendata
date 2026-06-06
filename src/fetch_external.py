@@ -81,21 +81,31 @@ def fetch_insee_population(token: str = "") -> pd.DataFrame:
     return fetch_insee_serie("001641607", token)
 
 
-# ── INSEE — Pyramide des âges (fichier Excel public) ─────────────────────────
+# ── INSEE — Pyramide des âges (fichier CSV fourni) ───────────────────────────
 
-def fetch_insee_pyramide_from_excel(filepath: str) -> pd.DataFrame:
+def load_pyramide_from_csv(filepath: str | Path = None) -> pd.DataFrame:
     """
-    Parse le fichier Excel INSEE 'pop-totale-france.xlsx'.
-    Télécharger depuis : https://www.insee.fr/fr/statistiques/1893198
+    Parse le fichier CSV INSEE de la pyramide des âges (projections de population).
+    Format : ANNEE;SEXE;AGE;POP  (séparateur point-virgule)
+    SEXE : M (Masculin) → genre_code 'H', F (Féminin) → genre_code 'F'
+    Années 1991–2026 (observations + projections), âges 0–99.
     """
-    df = pd.read_excel(filepath, sheet_name=0, skiprows=4)
-    # Structure attendue : colonne Âge + colonnes par année
-    # À adapter selon le format réel du fichier
-    df = df.rename(columns={df.columns[0]: "age"})
-    df = df.melt(id_vars="age", var_name="annee", value_name="population")
-    df["annee"] = pd.to_numeric(df["annee"], errors="coerce")
-    df["age"] = pd.to_numeric(df["age"], errors="coerce")
-    return df.dropna()
+    if filepath is None:
+        filepath = RAW_DIR / "donnees_pyramide_proj.csv"
+    df = pd.read_csv(filepath, sep=";", dtype={"ANNEE": int, "AGE": int, "POP": int})
+    df.columns = df.columns.str.strip().str.upper()
+    df = df.rename(columns={"ANNEE": "annee", "AGE": "age", "POP": "population"})
+    df["genre_code"] = df["SEXE"].map({"M": "H", "F": "F"})
+    df = df[["annee", "age", "genre_code", "population"]].dropna()
+    df["annee"]      = df["annee"].astype(int)
+    df["age"]        = df["age"].astype(int)
+    df["population"] = df["population"].astype(int)
+    # Marque les années >= 2024 comme projections
+    df["source_fichier"] = df["annee"].apply(
+        lambda a: "INSEE_PROJ" if a >= 2024 else "INSEE_OBS"
+    )
+    _save(df, "insee_pyramide_ages")
+    return df
 
 
 # ── COR — Projections (CSV/Excel téléchargés manuellement) ───────────────────
