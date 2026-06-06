@@ -31,7 +31,12 @@ def engine() -> sa.Engine:
 def read_sql(query: str, **kwargs):
     import pandas as pd
     with engine().connect() as conn:
-        return pd.read_sql(sa.text(query), conn, **kwargs)
+        df = pd.read_sql(sa.text(query), conn, **kwargs)
+    # pyodbc retourne decimal.Decimal pour les colonnes DECIMAL/NUMERIC ;
+    # on force la conversion en float64 pour compatibilité matplotlib/numpy.
+    for col in df.select_dtypes(include="object").columns:
+        df[col] = pd.to_numeric(df[col], errors="ignore")
+    return df
 
 
 def to_sql(df, table: str, schema: str = "fact", if_exists: str = "append", **kwargs) -> int:
