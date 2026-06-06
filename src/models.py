@@ -20,7 +20,8 @@ def forecast_arima(series: pd.Series, steps: int = 5, order: tuple = (1, 1, 1)) 
     result = fit_arima(series, order)
     forecast = result.forecast(steps=steps)
     last_idx = series.index[-1]
-    future_idx = range(last_idx + 1, last_idx + steps + 1) if isinstance(last_idx, int) else None
+    last_idx_int = int(last_idx) if isinstance(last_idx, (int, np.integer)) else None
+    future_idx = range(last_idx_int + 1, last_idx_int + steps + 1) if last_idx_int is not None else None
     return pd.Series(forecast.values, index=future_idx, name="forecast")
 
 
