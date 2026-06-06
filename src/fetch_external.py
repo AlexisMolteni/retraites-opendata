@@ -26,31 +26,59 @@ def _save(df: pd.DataFrame, name: str) -> Path:
 # Sans token : téléchargement manuel des fichiers Excel
 
 def fetch_insee_serie(serie_id: str, token: str = "") -> pd.DataFrame:
-    """Récupère une série temporelle INSEE via l'API BDM."""
-    headers = {"Accept": "application/json"}
+    """Récupère une série temporelle INSEE via l'API BDM (format SDMX XML)."""
+    import xml.etree.ElementTree as ET
+    headers = {"Accept": "application/xml"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     url = f"{INSEE_BASE}/data/SERIES_BDM/{serie_id}"
-    r = requests.get(url, headers=headers, timeout=30)
+    r = requests.get(url, headers=headers, timeout=60)
     r.raise_for_status()
-    obs = r.json()["seriesData"][0]["Obs"]
-    df = pd.DataFrame(obs)[["time-period", "obs-value"]].rename(
-        columns={"time-period": "annee", "obs-value": "valeur"}
-    )
-    df["serie_id"] = serie_id
-    df["annee"] = pd.to_numeric(df["annee"].str[:4], errors="coerce")
+    root = ET.fromstring(r.text)
+    rows = []
+    for elem in root.iter():
+        if elem.tag.split("}")[-1] == "Obs":
+            period = elem.attrib.get("TIME_PERIOD", "")
+            value  = elem.attrib.get("OBS_VALUE")
+            rows.append({"periode": period, "valeur": value})
+    df = pd.DataFrame(rows)
+    df["annee"] = pd.to_numeric(df["periode"].str[:4], errors="coerce")
     df["valeur"] = pd.to_numeric(df["valeur"], errors="coerce")
-    return df.dropna(subset=["annee"])
+    df["serie_id"] = serie_id
+    # Séries mensuelles/trimestrielles → moyenne annuelle
+    if df["periode"].str.len().max() > 4:
+        df = df.groupby(["annee", "serie_id"], as_index=False)["valeur"].mean()
+    return df.dropna(subset=["annee"]).sort_values("annee").reset_index(drop=True)
 
 
 def fetch_insee_inflation(token: str = "") -> pd.DataFrame:
-    """IPC — série 000641194 (indice des prix à la consommation)."""
+    """IPC — série 000641194 (indice des prix à la consommation, base 2015)."""
     return fetch_insee_serie("000641194", token)
 
 
-def fetch_insee_taux_activite_seniors(token: str = "") -> pd.DataFrame:
-    """Taux d'activité 55-64 ans — série 001595978."""
-    return fetch_insee_serie("001595978", token)
+def fetch_insee_chomage_seniors(token: str = "") -> pd.DataFrame:
+    """Taux de chômage BIT 50 ans et plus — série 001688530 (trimestriel → annuel)."""
+    return fetch_insee_serie("001688530", token)
+
+
+def fetch_insee_chomage_ensemble(token: str = "") -> pd.DataFrame:
+    """Taux de chômage BIT ensemble — série 001688526 (trimestriel → annuel)."""
+    return fetch_insee_serie("001688526", token)
+
+
+def fetch_insee_mortalite(token: str = "") -> pd.DataFrame:
+    """Taux de mortalité pour 1000 habitants — série 001641593 (annuel)."""
+    return fetch_insee_serie("001641593", token)
+
+
+def fetch_insee_natalite(token: str = "") -> pd.DataFrame:
+    """Naissances mensuelles → total annuel — série 001641601."""
+    return fetch_insee_serie("001641601", token)
+
+
+def fetch_insee_population(token: str = "") -> pd.DataFrame:
+    """Population France (début de mois → moyenne annuelle) — série 001641607."""
+    return fetch_insee_serie("001641607", token)
 
 
 # ── INSEE — Pyramide des âges (fichier Excel public) ─────────────────────────
@@ -107,19 +135,21 @@ def load_drees_pensions(filepath: str, sheet: str = "pension_moyenne") -> pd.Dat
 # ── Point d'entrée ────────────────────────────────────────────────────────────
 
 def download_insee_api(token: str = "") -> None:
-    print("INSEE — inflation...")
-    try:
-        df = fetch_insee_inflation(token)
-        _save(df, "insee_inflation")
-    except Exception as e:
-        print(f"  ✗ {e} (token requis ou téléchargement manuel)")
-
-    print("INSEE — taux activité seniors...")
-    try:
-        df = fetch_insee_taux_activite_seniors(token)
-        _save(df, "insee_taux_activite_seniors")
-    except Exception as e:
-        print(f"  ✗ {e}")
+    series = {
+        "insee_inflation":        ("000641194", "IPC - indice des prix a la consommation"),
+        "insee_chomage_seniors":  ("001688530", "Taux chomage BIT 50 ans et plus"),
+        "insee_chomage_ensemble": ("001688526", "Taux chomage BIT ensemble"),
+        "insee_mortalite":        ("001641593", "Taux de mortalite"),
+        "insee_natalite":         ("001641601", "Naissances par mois"),
+        "insee_population":       ("001641607", "Population France"),
+    }
+    for name, (serie_id, label) in series.items():
+        print(f"INSEE - {label}...")
+        try:
+            df = fetch_insee_serie(serie_id, token)
+            _save(df, name)
+        except Exception as e:
+            print(f"  ERREUR : {e}")
 
 
 if __name__ == "__main__":
