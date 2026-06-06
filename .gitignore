@@ -7,4 +7,7 @@ __pycache__/
 reports/*.png
 reports/*.html
 reports/*.pdf
+notebooks/reports/*.png
+notebooks/reports/*.html
+notebooks/reports/*.pdf
 .ipynb_checkpoints/
