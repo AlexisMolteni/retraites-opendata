@@ -13,6 +13,7 @@ import numpy as np
 from pathlib import Path
 from src.db import engine, to_sql
 from src.fetch_external import load_pyramide_from_csv
+from src.fetch_drees import fetch_all_drees
 import sqlalchemy as sa
 
 PRO = Path("data/processed")
@@ -235,6 +236,43 @@ def load_pyramide_ages() -> int:
     return len(out)
 
 
+# ── 7. ext.DREES_PensionsMultiRegimes ───────────────────────────────────────
+
+def load_drees_panorama() -> int:
+    df = fetch_all_drees(download=False)
+
+    out = df[["annee", "regime_id", "genre_code", "indicateur",
+              "valeur", "unite", "source_fichier"]].copy()
+    out["annee"]     = out["annee"].astype(int)
+    out["regime_id"] = out["regime_id"].astype(int)
+    out["valeur"]    = pd.to_numeric(out["valeur"], errors="coerce").round(4)
+    out = out.dropna(subset=["valeur"])
+
+    with engine().begin() as conn:
+        conn.execute(sa.text(
+            "DELETE FROM [ext].[DREES_PensionsMultiRegimes] "
+            "WHERE source_fichier = 'DREES_PANORAMA_2025'"
+        ))
+
+    out.to_sql(
+        name="DREES_PensionsMultiRegimes",
+        schema="ext",
+        con=engine(),
+        if_exists="append",
+        index=False,
+        dtype={
+            "annee":          sa.SmallInteger(),
+            "regime_id":      sa.SmallInteger(),
+            "genre_code":     sa.CHAR(1),
+            "indicateur":     sa.NVARCHAR(50),
+            "valeur":         sa.Numeric(12, 4),
+            "unite":          sa.NVARCHAR(20),
+            "source_fichier": sa.NVARCHAR(200),
+        },
+    )
+    return len(out)
+
+
 # ── Point d'entrée ────────────────────────────────────────────────────────────
 
 def load_all() -> None:
@@ -242,12 +280,13 @@ def load_all() -> None:
     _ensure_carsat_sudest()
 
     loaders = [
-        ("fact.RetraitesEffectifs",     load_effectifs),
-        ("fact.Attributions",           load_attributions),
-        ("fact.Ages",                   load_ages),
-        ("fact.Montants",               load_montants),
-        ("fact.DureeAssurance",         load_durees),
-        ("ext.INSEE_PyramideAges",      load_pyramide_ages),
+        ("fact.RetraitesEffectifs",         load_effectifs),
+        ("fact.Attributions",               load_attributions),
+        ("fact.Ages",                       load_ages),
+        ("fact.Montants",                   load_montants),
+        ("fact.DureeAssurance",             load_durees),
+        ("ext.INSEE_PyramideAges",          load_pyramide_ages),
+        ("ext.DREES_PensionsMultiRegimes",  load_drees_panorama),
     ]
     total = 0
     for name, fn in loaders:
