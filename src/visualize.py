@@ -52,7 +52,7 @@ def plot_gender_gap(df: pd.DataFrame, year_col: str, male_col: str, female_col: 
     return fig
 
 
-def plot_carsat_map(df: pd.DataFrame, region_col: str, value_col: str, title: str = "") -> px.Figure:
+def plot_carsat_map(df: pd.DataFrame, region_col: str, value_col: str, title: str = "") -> go.Figure:
     fig = px.bar(df.sort_values(value_col, ascending=True), x=value_col, y=region_col,
                  orientation="h", title=title, template="plotly_white")
     return fig
