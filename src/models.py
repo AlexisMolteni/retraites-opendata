@@ -26,13 +26,18 @@ def forecast_arima(series: pd.Series, steps: int = 5, order: tuple = (1, 1, 1)) 
 
 # ── Prophet ──────────────────────────────────────────────────────────────────
 
-def forecast_prophet(df: pd.DataFrame, periods: int = 5, freq: str = "Y") -> pd.DataFrame:
+def forecast_prophet(df: pd.DataFrame, periods: int = 5, freq: str = "Y",
+                     changepoints: list = None) -> pd.DataFrame:
     """df doit avoir des colonnes 'ds' (datetime) et 'y' (valeur)."""
     try:
         from prophet import Prophet
     except ImportError:
         raise ImportError("Installer prophet : pip install prophet")
-    m = Prophet(yearly_seasonality=True)
+    kwargs = {"yearly_seasonality": True}
+    if changepoints:
+        kwargs["changepoints"] = [pd.Timestamp(c) for c in changepoints
+                                   if pd.Timestamp(c) <= df["ds"].max()]
+    m = Prophet(**kwargs)
     m.fit(df)
     future = m.make_future_dataframe(periods=periods, freq=freq)
     forecast = m.predict(future)
@@ -41,14 +46,19 @@ def forecast_prophet(df: pd.DataFrame, periods: int = 5, freq: str = "Y") -> pd.
 
 # ── Régression linéaire ───────────────────────────────────────────────────────
 
-def fit_linear(X: pd.DataFrame, y: pd.Series) -> LinearRegression:
+def fit_linear(X: pd.Series, y: pd.Series):
+    """Retourne (model, mae, rmse)."""
     model = LinearRegression()
-    model.fit(X, y)
-    return model
+    X_arr = X.values.reshape(-1, 1)
+    model.fit(X_arr, y)
+    y_pred = model.predict(X_arr)
+    mae = mean_absolute_error(y, y_pred)
+    rmse = np.sqrt(mean_squared_error(y, y_pred))
+    return model, mae, rmse
 
 
-def evaluate(y_true, y_pred) -> dict:
-    return {
-        "mae": mean_absolute_error(y_true, y_pred),
-        "rmse": np.sqrt(mean_squared_error(y_true, y_pred)),
-    }
+def evaluate(y_true, y_pred) -> tuple:
+    """Retourne (mae, rmse)."""
+    mae = mean_absolute_error(y_true, y_pred)
+    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+    return mae, rmse
